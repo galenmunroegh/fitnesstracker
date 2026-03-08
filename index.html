@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Multi-User Fitness Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{font-family:Arial;background:#eef2f6;padding:20px}
+.container{max-width:950px;margin:auto;background:white;padding:20px;border-radius:10px}
+h2{text-align:center}
+
+input,select{padding:8px;margin:6px;width:100%}
+
+button{
+background:#0077ff;
+color:white;
+padding:10px;
+border:none;
+border-radius:6px;
+cursor:pointer;
+width:100%;
+margin-top:5px;
+}
+
+.stats{display:flex;gap:15px;margin-top:20px}
+
+.card{
+background:#f7f9fc;
+flex:1;
+padding:12px;
+border-radius:6px;
+text-align:center;
+}
+
+table{width:100%;margin-top:20px;border-collapse:collapse}
+
+td,th{
+border:1px solid #ddd;
+padding:8px;
+text-align:center
+}
+
+canvas{margin-top:30px}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>Multi-User Fitness Tracker</h2>
+
+<h3>User Profile</h3>
+
+<select id="userSelect" onchange="switchUser()"></select>
+
+<input type="text" id="newUser" placeholder="Create New User">
+
+<button onclick="createUser()">Add User</button>
+
+<hr>
+
+<h3>Log Workout</h3>
+
+<input type="date" id="date">
+
+<select id="type">
+<option>Strength</option>
+<option>Cardio</option>
+<option>Both</option>
+</select>
+
+<input type="number" id="cardio" placeholder="Cardio Minutes">
+
+<input type="number" id="weight" placeholder="Weight (lbs)">
+
+<input type="number" id="fat" placeholder="Body Fat %">
+
+<input type="text" id="notes" placeholder="Notes">
+
+<button onclick="saveWorkout()">Save Workout</button>
+
+<div class="stats">
+
+<div class="card">
+<h4>Current Weight</h4>
+<p id="currentWeight">--</p>
+</div>
+
+<div class="card">
+<h4>Goal Progress</h4>
+<p id="goalProgress">--</p>
+</div>
+
+<div class="card">
+<h4>Workouts This Week</h4>
+<p id="weeklyWorkouts">0</p>
+</div>
+
+</div>
+
+<canvas id="chart"></canvas>
+
+<h3>Workout Log</h3>
+
+<table id="table">
+
+<tr>
+<th>Date</th>
+<th>Type</th>
+<th>Cardio</th>
+<th>Weight</th>
+<th>Body Fat</th>
+<th>Notes</th>
+</tr>
+
+</table>
+
+</div>
+
+<script>
+
+let users = JSON.parse(localStorage.getItem("fitness_users")) || []
+let currentUser = localStorage.getItem("fitness_current_user") || ""
+
+function saveUsers(){
+localStorage.setItem("fitness_users",JSON.stringify(users))
+}
+
+function getUserKey(){
+return "workouts_"+currentUser
+}
+
+function getWorkouts(){
+return JSON.parse(localStorage.getItem(getUserKey())) || []
+}
+
+function saveWorkouts(data){
+localStorage.setItem(getUserKey(),JSON.stringify(data))
+}
+
+function populateUsers(){
+
+let select=document.getElementById("userSelect")
+select.innerHTML=""
+
+users.forEach(u=>{
+let opt=document.createElement("option")
+opt.value=u
+opt.text=u
+select.appendChild(opt)
+})
+
+select.value=currentUser
+}
+
+function createUser(){
+
+let name=document.getElementById("newUser").value.trim()
+
+if(!name) return
+
+if(!users.includes(name)){
+users.push(name)
+saveUsers()
+}
+
+currentUser=name
+localStorage.setItem("fitness_current_user",name)
+
+populateUsers()
+render()
+
+document.getElementById("newUser").value=""
+}
+
+function switchUser(){
+
+currentUser=document.getElementById("userSelect").value
+
+localStorage.setItem("fitness_current_user",currentUser)
+
+render()
+
+}
+
+function saveWorkout(){
+
+if(!currentUser){
+alert("Please create or select a user first.")
+return
+}
+
+let workouts=getWorkouts()
+
+let workout={
+
+date:document.getElementById("date").value,
+type:document.getElementById("type").value,
+cardio:document.getElementById("cardio").value,
+weight:document.getElementById("weight").value,
+fat:document.getElementById("fat").value,
+notes:document.getElementById("notes").value
+
+}
+
+workouts.push(workout)
+
+saveWorkouts(workouts)
+
+render()
+
+}
+
+function render(){
+
+if(!currentUser) return
+
+let workouts=getWorkouts()
+
+let table=document.getElementById("table")
+
+table.innerHTML=`
+<tr>
+<th>Date</th>
+<th>Type</th>
+<th>Cardio</th>
+<th>Weight</th>
+<th>Body Fat</th>
+<th>Notes</th>
+</tr>
+`
+
+let weights=[]
+let dates=[]
+let workoutsThisWeek=0
+
+let now=new Date()
+let weekAgo=new Date()
+weekAgo.setDate(now.getDate()-7)
+
+workouts.forEach(w=>{
+
+table.innerHTML+=`
+<tr>
+<td>${w.date}</td>
+<td>${w.type}</td>
+<td>${w.cardio}</td>
+<td>${w.weight}</td>
+<td>${w.fat}</td>
+<td>${w.notes}</td>
+</tr>
+`
+
+if(w.weight){
+weights.push(w.weight)
+dates.push(w.date)
+}
+
+if(new Date(w.date)>weekAgo){
+workoutsThisWeek++
+}
+
+})
+
+document.getElementById("weeklyWorkouts").innerText=workoutsThisWeek
+
+if(weights.length){
+
+let current=weights[weights.length-1]
+
+document.getElementById("currentWeight").innerText=current+" lbs"
+
+let goal=165
+let start=weights[0]
+
+let progress=Math.round((start-current)/(start-goal)*100)
+
+if(progress<0) progress=0
+
+document.getElementById("goalProgress").innerText=progress+"%"
+
+}
+
+drawChart(dates,weights)
+
+}
+
+let chart
+
+function drawChart(dates,weights){
+
+let ctx=document.getElementById("chart")
+
+if(chart) chart.destroy()
+
+chart=new Chart(ctx,{
+type:"line",
+data:{
+labels:dates,
+datasets:[
+{
+label:"Weight",
+data:weights,
+fill:false,
+tension:0.25
+}
+]
+}
+})
+
+}
+
+function init(){
+
+populateUsers()
+
+if(currentUser){
+render()
+}
+
+}
+
+init()
+
+</script>
+
+</body>
+</html>
+
